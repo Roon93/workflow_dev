@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "acceptance-criteria-schema.json",
+  "title": "acceptance-criteria/confirmed.json",
+  "description": "Locked acceptance criteria confirmed by user in Phase 4",
+  "type": "object",
+  "required": ["version", "confirmedAt", "confirmedBy", "featureCriteria"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "confirmedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "confirmedBy": {
+      "type": "string",
+      "enum": ["user", "system"]
+    },
+    "featureCriteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "taskCriteria"],
+        "properties": {
+          "id": { "type": "string" },
+          "description": { "type": "string" },
+          "taskCriteria": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "taskId", "description", "verifiable", "verifyMethod"],
+              "properties": {
+                "id": { "type": "string" },
+                "taskId": { "type": "string" },
+                "description": { "type": "string" },
+                "verifiable": { "type": "boolean" },
+                "verifyMethod": {
+                  "type": "string",
+                  "enum": ["unit-test", "integration-test", "manual", "inspection"]
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

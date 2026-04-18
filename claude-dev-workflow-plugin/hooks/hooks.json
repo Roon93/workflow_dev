@@ -1,0 +1,37 @@
+{
+  "description": "claude-dev-workflow plugin hooks — PreToolUse for workflow state validation",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pre-bash-validate.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Evaluate whether this file write is authorized by the current workflow phase and task file scopes. Check if the target file is in the current task's files.create or files.modify list, or if the workflow is in a phase that allows arbitrary file writes (requirements, architect, planner)."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/on-stop-checkpoint.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "task-handoff-json-schema.json",
+  "title": "TaskHandoff",
+  "description": "Context object passed to developer agent for single-task execution",
+  "type": "object",
+  "required": ["taskId", "title", "description", "relatedRequirements", "acceptanceCriteria", "architectureContext", "interfaceSpecs", "moduleContext", "files", "dependencyOutputs", "modelTier"],
+  "properties": {
+    "taskId": { "type": "string" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "relatedRequirements": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "acceptanceCriteria": {
+      "type": "object",
+      "properties": {
+        "featureLevel": { "type": "string" },
+        "taskLevel": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "architectureContext": { "type": "string" },
+    "interfaceSpecs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "moduleContext": { "type": "string" },
+    "files": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "array", "items": { "type": "string" } },
+        "modify": { "type": "array", "items": { "type": "string" } },
+        "read": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "dependencyOutputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["taskId", "summary", "createdFiles"],
+        "properties": {
+          "taskId": { "type": "string" },
+          "summary": { "type": "string" },
+          "createdFiles": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "previousAttempt": {
+      "type": "object",
+      "properties": {
+        "round": { "type": "integer" },
+        "failureReason": { "type": "string" },
+        "reviewComments": { "type": "array", "items": { "type": "string" } },
+        "failingTests": { "type": "array", "items": { "type": "string" } },
+        "errorLogs": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "modelTier": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    }
+  },
+  "additionalProperties": false
+}

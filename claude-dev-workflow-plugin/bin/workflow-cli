@@ -1,0 +1,636 @@
+#!/usr/bin/env python3
+"""
+workflow-cli -- MCP tool server for claude-dev-workflow plugin.
+
+Implements all workflow management tools as MCP tools over stdio JSON-RPC.
+"""
+
+import sys
+import json
+import os
+import uuid
+import subprocess
+from datetime import datetime
+from pathlib import Path
+
+TOOL_DEFINITIONS = [
+    {
+        "name": "workflow_init",
+        "description": "Initialize a new workflow directory and workflow.json",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "id": {"type": "string"}
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "workflow_load",
+        "description": "Read the current workflow state",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "workflow_advance_phase",
+        "description": "Advance workflow to next phase and create checkpoint",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "workflowId": {"type": "string"}
+            }
+        }
+    },
+    {
+        "name": "tasks_list_ready",
+        "description": "Return tasks that are ready to dispatch (status=todo, all dependsOn done)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "maxConcurrency": {"type": "integer", "default": 3}
+            }
+        }
+    },
+    {
+        "name": "tasks_update_status",
+        "description": "Update a task's status",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "taskId": {"type": "string"},
+                "status": {"type": "string", "enum": ["todo", "dispatched", "in_progress", "review_pending", "done", "failed", "blocked", "environment_blocked"]},
+                "tddRounds": {"type": "integer"},
+                "lastFailure": {"type": "object"}
+            },
+            "required": ["taskId", "status"]
+        }
+    },
+    {
+        "name": "tasks_detect_conflicts",
+        "description": "Detect file conflicts among a batch of tasks",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "taskIds": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["taskIds"]
+        }
+    },
+    {
+        "name": "handoff_build",
+        "description": "Build a TaskHandoff object for a task",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "taskId": {"type": "string"}
+            },
+            "required": ["taskId"]
+        }
+    },
+    {
+        "name": "state_append_log",
+        "description": "Append an entry to dev-log.json or qa-history.json",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "logType": {"type": "string", "enum": ["dev-log", "qa-history"]},
+                "taskId": {"type": "string"},
+                "entry": {"type": "object"}
+            },
+            "required": ["logType", "entry"]
+        }
+    },
+    {
+        "name": "git_create_branch",
+        "description": "Create a git branch for a task",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "branchName": {"type": "string"},
+                "baseBranch": {"type": "string"}
+            },
+            "required": ["branchName"]
+        }
+    },
+    {
+        "name": "git_commit",
+        "description": "Create a git commit with conventional message",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string"},
+                "files": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["message"]
+        }
+    },
+    {
+        "name": "git_merge_integration",
+        "description": "Merge task branches into integration branch",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "taskIds": {"type": "array", "items": {"type": "string"}},
+                "integrationBranch": {"type": "string"}
+            },
+            "required": ["taskIds"]
+        }
+    },
+    {
+        "name": "git_tag_checkpoint",
+        "description": "Create a git tag marking a phase checkpoint",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tagName": {"type": "string"},
+                "message": {"type": "string"}
+            },
+            "required": ["tagName"]
+        }
+    },
+    {
+        "name": "verify_record_result",
+        "description": "Write a verification result entry",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "featureRef": {"type": "string"},
+                "status": {"type": "string", "enum": ["pass", "fail"]},
+                "severity": {"type": "string", "enum": ["critical", "major", "minor"]},
+                "notes": {"type": "string"},
+                "returnPhase": {"type": "string"},
+                "affectedTasks": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["featureRef", "status"]
+        }
+    }
+]
+
+
+def get_state_dir():
+    return Path(os.environ.get("CLAUDE_WORKSPACE", ".")) / "state"
+
+
+def load_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+
+
+def save_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def workflow_init(name=None, id=None):
+    state_dir = get_state_dir()
+    wf_path = state_dir / "workflow.json"
+
+    if wf_path.exists():
+        return {"error": "workflow.json already exists", "code": "ALREADY_EXISTS"}
+
+    wf_id = id or str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+
+    wf = {
+        "id": wf_id,
+        "name": name or "unnamed-workflow",
+        "currentPhase": "REQUIREMENTS",
+        "status": "in_progress",
+        "phases": {
+            "REQUIREMENTS": {"status": "in_progress"},
+            "ARCHITECT": {"status": "pending"},
+            "TASK_PLANNING": {"status": "pending"},
+            "ACCEPTANCE_CONFIRM": {"status": "pending"},
+            "DEVELOPMENT": {"status": "pending"},
+            "REVIEW": {"status": "pending"},
+            "VERIFY": {"status": "pending"}
+        },
+        "scheduler": {
+            "totalTasks": 0, "done": 0, "inProgress": 0, "todo": 0,
+            "failed": 0, "blocked": 0, "environmentBlocked": 0
+        },
+        "retryCount": 0,
+        "maxRetries": 3,
+        "createdAt": now,
+        "updatedAt": now
+    }
+
+    save_json(wf_path, wf)
+
+    # Create subdirectories
+    for sub in ["requirements", "architect/interfaces", "planner", "acceptance-criteria",
+                "dev", "review", "verify", "checkpoints"]:
+        (state_dir / sub).mkdir(parents=True, exist_ok=True)
+
+    return {"workflow": wf}
+
+
+def workflow_load():
+    state_dir = get_state_dir()
+    wf_path = state_dir / "workflow.json"
+    wf = load_json(wf_path)
+    if wf is None:
+        return {"error": "No workflow found", "code": "NOT_FOUND"}
+    return {"workflow": wf}
+
+
+def workflow_advance_phase(workflowId=None):
+    state_dir = get_state_dir()
+    wf_path = state_dir / "workflow.json"
+    wf = load_json(wf_path)
+
+    if wf is None:
+        return {"error": "No workflow found", "code": "NOT_FOUND"}
+
+    if workflowId and wf.get("id") != workflowId:
+        return {"error": "Workflow ID mismatch", "code": "ID_MISMATCH"}
+
+    phases_order = ["REQUIREMENTS", "ARCHITECT", "TASK_PLANNING",
+                    "ACCEPTANCE_CONFIRM", "DEVELOPMENT", "REVIEW", "VERIFY"]
+
+    current = wf["currentPhase"]
+    idx = phases_order.index(current)
+    if idx >= len(phases_order) - 1:
+        return {"error": "Already at final phase", "code": "ALREADY_FINAL"}
+
+    now = datetime.utcnow().isoformat() + "Z"
+
+    # Complete current phase
+    wf["phases"][current]["status"] = "completed"
+    wf["phases"][current]["completedAt"] = now
+    wf["phases"][current]["checkpointTag"] = f"checkpoint/after-{current.lower()}"
+
+    # Advance to next
+    next_phase = phases_order[idx + 1]
+    wf["currentPhase"] = next_phase
+    wf["status"] = "in_progress"
+    wf["phases"][next_phase]["status"] = "in_progress"
+    wf["phases"][next_phase]["startedAt"] = now
+    wf["updatedAt"] = now
+
+    save_json(wf_path, wf)
+
+    # Create checkpoint tag
+    if Path(".git").exists():
+        subprocess.run(["git", "tag", f"checkpoint/after-{current.lower()}"],
+                      cwd=os.environ.get("CLAUDE_WORKSPACE", "."), capture_output=True)
+
+    return {"workflow": wf, "previousPhase": current, "currentPhase": next_phase}
+
+
+def tasks_list_ready(maxConcurrency=3):
+    state_dir = get_state_dir()
+    tb_path = state_dir / "planner" / "task-board.json"
+    tb = load_json(tb_path)
+
+    if tb is None:
+        return {"error": "No task board found", "code": "NOT_FOUND"}
+
+    task_map = {t["id"]: t for t in tb["tasks"]}
+    done_ids = {t["id"] for t in tb["tasks"] if t["status"] == "done"}
+
+    # Filter: status=todo AND all dependsOn are done
+    ready = []
+    for t in tb["tasks"]:
+        if t["status"] != "todo":
+            continue
+        deps = t.get("dependsOn", [])
+        if all(dep in done_ids for dep in deps):
+            ready.append(t)
+
+    # Detect file conflicts within ready tasks
+    batch = []
+    used_creates = set()
+    used_modifies = set()
+
+    # Sort by priority
+    priority_map = {"high": 0, "medium": 1, "low": 2}
+    def priority_key(t):
+        return priority_map.get(t.get("priority", "medium"), 1)
+
+    for t in sorted(ready, key=priority_key):
+        creates = set(t.get("files", {}).get("create", []))
+        modifies = set(t.get("files", {}).get("modify", []))
+
+        if creates.isdisjoint(used_creates) and creates.isdisjoint(used_modifies) and modifies.isdisjoint(used_creates):
+            batch.append(t)
+            used_creates.update(creates)
+            used_modifies.update(modifies)
+            if len(batch) >= maxConcurrency:
+                break
+
+    return {"readyTasks": batch, "totalReady": len(ready)}
+
+
+def tasks_update_status(taskId=None, status=None, tddRounds=None, lastFailure=None):
+    state_dir = get_state_dir()
+    tb_path = state_dir / "planner" / "task-board.json"
+    tb = load_json(tb_path)
+
+    if tb is None:
+        return {"error": "No task board found", "code": "NOT_FOUND"}
+
+    task_map = {t["id"]: t for t in tb["tasks"]}
+    if taskId not in task_map:
+        return {"error": f"Task {taskId} not found", "code": "TASK_NOT_FOUND"}
+
+    task = task_map[taskId]
+    task["status"] = status
+    if tddRounds is not None:
+        task["tddRounds"] = tddRounds
+    if lastFailure is not None:
+        task["lastFailure"] = lastFailure
+
+    # Update scheduler stats
+    total = len(tb["tasks"])
+    done = sum(1 for t in tb["tasks"] if t["status"] == "done")
+    in_progress = sum(1 for t in tb["tasks"] if t["status"] in ("dispatched", "in_progress"))
+    todo = sum(1 for t in tb["tasks"] if t["status"] == "todo")
+    failed = sum(1 for t in tb["tasks"] if t["status"] == "failed")
+    blocked = sum(1 for t in tb["tasks"] if t["status"] == "blocked")
+
+    tb["tasks"] = list(task_map.values())
+
+    wf_path = state_dir / "workflow.json"
+    if wf_path.exists():
+        wf = load_json(wf_path)
+        wf["scheduler"] = {
+            "totalTasks": total, "done": done, "inProgress": in_progress,
+            "todo": todo, "failed": failed, "blocked": blocked, "environmentBlocked": 0
+        }
+        wf["updatedAt"] = datetime.utcnow().isoformat() + "Z"
+        save_json(wf_path, wf)
+
+    return {"task": task, "scheduler": {"totalTasks": total, "done": done, "inProgress": in_progress, "todo": todo, "failed": failed, "blocked": blocked}}
+
+
+def tasks_detect_conflicts(taskIds=None):
+    state_dir = get_state_dir()
+    tb_path = state_dir / "planner" / "task-board.json"
+    tb = load_json(tb_path)
+
+    if tb is None:
+        return {"error": "No task board found", "code": "NOT_FOUND"}
+
+    task_map = {t["id"]: t for t in tb["tasks"]}
+    conflicts = []
+
+    for i, a_id in enumerate(taskIds or []):
+        if a_id not in task_map:
+            continue
+        a = task_map[a_id]
+        a_creates = set(a.get("files", {}).get("create", []))
+        a_modifies = set(a.get("files", {}).get("modify", []))
+
+        for b_id in taskIds[i+1:]:
+            if b_id not in task_map:
+                continue
+            b = task_map[b_id]
+            b_creates = set(b.get("files", {}).get("create", []))
+            b_modifies = set(b.get("files", {}).get("modify", []))
+
+            # Check create-create and create-modify intersections
+            if not a_creates.isdisjoint(b_creates):
+                conflicts.append({"taskA": a_id, "taskB": b_id, "type": "create-create", "files": list(a_creates & b_creates)})
+            if not a_creates.isdisjoint(b_modifies):
+                conflicts.append({"taskA": a_id, "taskB": b_id, "type": "create-modify", "files": list(a_creates & b_modifies)})
+            if not a_modifies.isdisjoint(b_creates):
+                conflicts.append({"taskA": a_id, "taskB": b_id, "type": "modify-create", "files": list(a_modifies & b_creates)})
+
+    return {"conflicts": conflicts, "hasConflicts": len(conflicts) > 0}
+
+
+def handoff_build(taskId=None):
+    state_dir = get_state_dir()
+    tb_path = state_dir / "planner" / "task-board.json"
+    tb = load_json(tb_path)
+
+    if tb is None:
+        return {"error": "No task board found", "code": "NOT_FOUND"}
+
+    task_map = {t["id"]: t for t in tb["tasks"]}
+    if taskId not in task_map:
+        return {"error": f"Task {taskId} not found", "code": "TASK_NOT_FOUND"}
+
+    task = task_map[taskId]
+
+    # Collect dependency outputs from upstream done tasks
+    dep_outputs = []
+    for dep_id in task.get("dependsOn", []):
+        if dep_id in task_map and task_map[dep_id]["status"] == "done":
+            dep_outputs.append({
+                "taskId": dep_id,
+                "summary": "Completed: " + task_map[dep_id]["title"],
+                "createdFiles": task_map[dep_id].get("files", {}).get("create", [])
+            })
+
+    # Read architecture context
+    arch_md = state_dir / "architect" / "architecture.md"
+    arch_context = arch_md.read_text() if arch_md.exists() else ""
+
+    handoff = {
+        "taskId": task["id"],
+        "title": task["title"],
+        "description": task["description"],
+        "relatedRequirements": [task.get("acceptanceCriteria", {}).get("featureRef", "")],
+        "acceptanceCriteria": task.get("acceptanceCriteria", {}),
+        "architectureContext": arch_context,
+        "interfaceSpecs": [task.get("interfaceRef", "")],
+        "moduleContext": "",
+        "files": task.get("files", {}),
+        "dependencyOutputs": dep_outputs,
+        "previousAttempt": task.get("lastFailure"),
+        "modelTier": task.get("modelTier", "medium")
+    }
+
+    return {"handoff": handoff}
+
+
+def state_append_log(logType=None, taskId=None, entry=None):
+    state_dir = get_state_dir()
+    entry["timestamp"] = datetime.utcnow().isoformat() + "Z"
+
+    if logType == "dev-log" and taskId:
+        log_path = state_dir / "dev" / taskId / "dev-log.json"
+        existing = load_json(log_path) or []
+        existing.append(entry)
+        save_json(log_path, existing)
+    elif logType == "qa-history":
+        log_path = state_dir / "requirements" / "qa-history.json"
+        existing = load_json(log_path) or []
+        existing.append(entry)
+        save_json(log_path, existing)
+    else:
+        return {"error": "Invalid logType or missing taskId", "code": "INVALID_PARAMS"}
+
+    return {"success": True, "entry": entry}
+
+
+def git_create_branch(branchName=None, baseBranch=None):
+    if not branchName:
+        return {"error": "branchName required", "code": "MISSING_PARAM"}
+
+    base = baseBranch or "main"
+    cmd = ["git", "checkout", "-b", branchName, base]
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            cwd=os.environ.get("CLAUDE_WORKSPACE", "."))
+    if result.returncode != 0:
+        return {"error": result.stderr, "code": "GIT_ERROR"}
+
+    return {"branch": branchName, "base": base}
+
+
+def git_commit(message=None, files=None):
+    if not message:
+        return {"error": "message required", "code": "MISSING_PARAM"}
+
+    ws = os.environ.get("CLAUDE_WORKSPACE", ".")
+    # Stage specified files or all
+    if files:
+        for f in files:
+            subprocess.run(["git", "add", f], cwd=ws, capture_output=True)
+    else:
+        subprocess.run(["git", "add", "-A"], cwd=ws, capture_output=True)
+
+    result = subprocess.run(["git", "commit", "-m", message],
+                            cwd=ws, capture_output=True, text=True)
+    if result.returncode != 0:
+        return {"error": result.stderr, "code": "GIT_ERROR"}
+
+    return {"message": message, "commit": result.stdout.strip()}
+
+
+def git_merge_integration(taskIds=None, integrationBranch=None):
+    if not taskIds:
+        return {"error": "taskIds required", "code": "MISSING_PARAM"}
+
+    int_branch = integrationBranch or "workflow/integration"
+    ws = os.environ.get("CLAUDE_WORKSPACE", ".")
+
+    # Create integration branch from main
+    subprocess.run(["git", "checkout", "-b", int_branch, "main"],
+                   cwd=ws, capture_output=True)
+
+    # Merge each task branch
+    merges = []
+    for tid in taskIds:
+        branch = f"feat/{tid}"
+        result = subprocess.run(["git", "merge", "--no-ff", "-m", f"Merge {branch}", branch],
+                                cwd=ws, capture_output=True, text=True)
+        merges.append({"taskId": tid, "branch": branch, "success": result.returncode == 0, "output": result.stdout})
+
+    return {"integrationBranch": int_branch, "merges": merges}
+
+
+def git_tag_checkpoint(tagName=None, message=None):
+    if not tagName:
+        return {"error": "tagName required", "code": "MISSING_PARAM"}
+
+    msg = message or f"Checkpoint: {tagName}"
+    result = subprocess.run(["git", "tag", "-a", tagName, "-m", msg],
+                            cwd=os.environ.get("CLAUDE_WORKSPACE", "."),
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        return {"error": result.stderr, "code": "GIT_ERROR"}
+
+    return {"tag": tagName}
+
+
+def verify_record_result(featureRef=None, status=None, severity=None,
+                         notes=None, returnPhase=None, affectedTasks=None):
+    state_dir = get_state_dir()
+    report_path = state_dir / "verify" / "verify-report.json"
+
+    existing = load_json(report_path)
+    if existing is None:
+        existing = {"results": [], "summary": {"total": 0, "pass": 0, "fail": 0}}
+
+    entry = {"featureRef": featureRef, "status": status}
+    if severity:
+        entry["severity"] = severity
+    if notes:
+        entry["notes"] = notes
+    if returnPhase:
+        entry["returnPhase"] = returnPhase
+    if affectedTasks:
+        entry["affectedTasks"] = affectedTasks
+
+    existing["results"].append(entry)
+
+    # Update summary
+    total = len(existing["results"])
+    passed = sum(1 for r in existing["results"] if r["status"] == "pass")
+    failed = total - passed
+    existing["summary"] = {"total": total, "pass": passed, "fail": failed}
+    existing["canShip"] = failed == 0
+
+    save_json(report_path, existing)
+    return {"result": entry, "canShip": existing["canShip"]}
+
+
+TOOL_HANDLERS = {
+    "workflow.init": workflow_init,
+    "workflow.load": workflow_load,
+    "workflow.advance_phase": workflow_advance_phase,
+    "tasks.list_ready": tasks_list_ready,
+    "tasks.update_status": tasks_update_status,
+    "tasks.detect_conflicts": tasks_detect_conflicts,
+    "handoff.build": handoff_build,
+    "state.append_log": state_append_log,
+    "git.create_branch": git_create_branch,
+    "git.commit": git_commit,
+    "git.merge_integration": git_merge_integration,
+    "git.tag_checkpoint": git_tag_checkpoint,
+    "verify.record_result": verify_record_result,
+}
+
+
+def handle_request(req):
+    method = req.get("method")
+    params = req.get("params", {})
+    req_id = req.get("id")
+
+    if method == "initialize":
+        return {"jsonrpc": "2.0", "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "tools": TOOL_DEFINITIONS}, "id": req_id}
+
+    if method == "tools/list":
+        return {"jsonrpc": "2.0", "result": {"tools": TOOL_DEFINITIONS}, "id": req_id}
+
+    if method == "tools/call":
+        tool_name = params.get("name")
+        args = params.get("arguments", {})
+
+        handler = TOOL_HANDLERS.get(tool_name)
+        if not handler:
+            return {"jsonrpc": "2.0", "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"}, "id": req_id}
+
+        try:
+            result = handler(**args)
+            if "error" in result:
+                return {"jsonrpc": "2.0", "result": result, "id": req_id}
+            return {"jsonrpc": "2.0", "result": result, "id": req_id}
+        except Exception as e:
+            return {"jsonrpc": "2.0", "error": {"code": -32603, "message": str(e)}, "id": req_id}
+
+    return {"jsonrpc": "2.0", "error": {"code": -32601, "message": f"Unknown method: {method}"}, "id": req_id}
+
+
+def main():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+            resp = handle_request(req)
+            print(json.dumps(resp), flush=True)
+        except json.JSONDecodeError:
+            print(json.dumps({"jsonrpc": "2.0", "error": {"code": -32700, "message": "Invalid JSON"}}), flush=True)
+
+
+if __name__ == "__main__":
+    main()

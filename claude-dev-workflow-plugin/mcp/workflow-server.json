@@ -1,0 +1,6 @@
+{
+  "workflow": {
+    "command": "${CLAUDE_PLUGIN_ROOT}/bin/workflow-cli",
+    "args": ["mcp-server"]
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "workflow-json-schema.json",
+  "title": "workflow.json",
+  "description": "Master workflow tracker — single source of truth for workflow state",
+  "type": "object",
+  "required": ["id", "name", "currentPhase", "status", "phases", "scheduler", "createdAt", "updatedAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique workflow identifier (UUID)"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable project/workflow name"
+    },
+    "currentPhase": {
+      "type": "string",
+      "enum": ["REQUIREMENTS", "ARCHITECT", "TASK_PLANNING", "ACCEPTANCE_CONFIRM", "DEVELOPMENT", "REVIEW", "VERIFY"],
+      "description": "Current active phase"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["in_progress", "paused", "interrupted", "completed", "cancelled"],
+      "description": "Overall workflow status"
+    },
+    "phases": {
+      "type": "object",
+      "properties": {
+        "REQUIREMENTS": { "$ref": "#/definitions/phaseStatus" },
+        "ARCHITECT": { "$ref": "#/definitions/phaseStatus" },
+        "TASK_PLANNING": { "$ref": "#/definitions/phaseStatus" },
+        "ACCEPTANCE_CONFIRM": { "$ref": "#/definitions/phaseStatus" },
+        "DEVELOPMENT": { "$ref": "#/definitions/phaseStatus" },
+        "REVIEW": { "$ref": "#/definitions/phaseStatus" },
+        "VERIFY": { "$ref": "#/definitions/phaseStatus" }
+      },
+      "additionalProperties": false
+    },
+    "scheduler": {
+      "type": "object",
+      "properties": {
+        "totalTasks": { "type": "integer", "minimum": 0 },
+        "done": { "type": "integer", "minimum": 0 },
+        "inProgress": { "type": "integer", "minimum": 0 },
+        "todo": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "integer", "minimum": 0 },
+        "environmentBlocked": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "retryCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "maxRetries": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "definitions": {
+    "phaseStatus": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "in_progress", "completed", "rejected", "skipped"]
+        },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "checkpointTag": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
