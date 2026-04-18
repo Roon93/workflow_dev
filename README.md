@@ -8,7 +8,7 @@
 
 ```bash
 # 方式一：链接到插件目录
-ln -s /path/to/roon_devwork ~/.claude/plugins/claude-dev-workflow
+ln -s /path/to/roon_devwork ~/.claude/plugins/roon_devwork
 
 # 方式二：直接使用 --plugin-dir
 claude --plugin-dir /path/to/roon_devwork
