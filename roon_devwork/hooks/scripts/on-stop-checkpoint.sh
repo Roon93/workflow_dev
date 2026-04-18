@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # on-stop-checkpoint.sh
-# Stop hook for claude-dev-workflow.
+# Stop hook for roon_devwork.
 # Creates an idempotent checkpoint before the workflow agent stops.
 set -e
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-workflow-cli -- MCP tool server for claude-dev-workflow plugin.
+workflow-cli -- MCP tool server for roon_devwork plugin.
 
 Implements all workflow management tools as MCP tools over stdio JSON-RPC.
 """

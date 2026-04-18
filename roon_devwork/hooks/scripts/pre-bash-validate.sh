@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pre-bash-validate.sh
-# PreToolUse hook for claude-dev-workflow.
+# PreToolUse hook for roon_devwork.
 # Validates that git operations (commit, branch, push) meet phase requirements
 # before allowing them to execute.
 set -e

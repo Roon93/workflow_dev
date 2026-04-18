@@ -1,5 +1,5 @@
 {
-  "name": "claude-dev-workflow",
+  "name": "roon_devwork",
   "version": "0.1.0",
   "description": "Multi-agent collaborative software development workflow plugin",
   "hooks": "./hooks/hooks.json"

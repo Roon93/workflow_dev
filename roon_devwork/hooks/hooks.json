@@ -1,5 +1,5 @@
 {
-  "description": "claude-dev-workflow plugin hooks — PreToolUse for workflow state validation",
+  "description": "roon_devwork plugin hooks — PreToolUse for workflow state validation",
   "hooks": {
     "PreToolUse": [
       {

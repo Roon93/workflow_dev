@@ -1,4 +1,4 @@
-# claude-dev-workflow
+# roon_devwork
 
 基于 Claude Code 插件机制的多 Agent 协作软件开发工作流插件。
 
@@ -8,16 +8,16 @@
 
 ```bash
 # 方式一：链接到插件目录
-ln -s /path/to/claude-dev-workflow-plugin ~/.claude/plugins/claude-dev-workflow
+ln -s /path/to/roon_devwork ~/.claude/plugins/claude-dev-workflow
 
 # 方式二：直接使用 --plugin-dir
-claude --plugin-dir /path/to/claude-dev-workflow-plugin
+claude --plugin-dir /path/to/roon_devwork
 ```
 
 ## 快速开始
 
 ```bash
-claude --plugin-dir /path/to/claude-dev-workflow-plugin
+claude --plugin-dir /path/to/roon_devwork
 ```
 
 进入 Claude Code 后，使用以下技能命令：
@@ -160,7 +160,7 @@ verify.record_result   写入验证结果
 ## 项目结构
 
 ```
-claude-dev-workflow-plugin/
+roon_devwork/
 ├── .claude-plugin/
 │   └── plugin.json              # 插件元数据
 ├── agents/                      # 7 个角色 Agent 定义
