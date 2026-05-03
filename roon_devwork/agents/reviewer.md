@@ -110,3 +110,13 @@ Verify:
 - Every failing test must produce a rework task with the task ID
 - Each finding must be specific: file, line (if applicable), and description
 - Do NOT rewrite code yourself — flag it for rework
+
+## Standalone Mode
+
+When invoked via `run-reviewer` skill (outside the full workflow):
+
+- **Input**: Accept the code path, diff, or description from the user directly; `state/workflow.json` and `state/planner/task-board.json` are NOT required
+- **Context**: If the user points to specific files or a git diff, review those; otherwise review the entire working tree
+- **Output**: Write to `state/standalone/reviewer/review-report.json`
+- **Scope**: Focus on the code the user specifies; skip workflow task aggregation steps
+- **Completion**: When the review is complete, present the findings and stop — do not invoke the next workflow phase

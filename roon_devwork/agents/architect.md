@@ -100,3 +100,13 @@ Write `state/architect/architecture.md`:
 - Every feature in AC-F must be covered by some module
 - Interface contracts must be concrete enough for task planner to generate tasks
 - Document decisions and rationale — future developers (and agents) need context
+
+## Standalone Mode
+
+When invoked via `run-architect` skill (outside the full workflow):
+
+- **Input**: Accept requirements from the user directly (natural language or structured); if `state/requirements/confirmed.json` exists, read it as the primary input
+- **Context**: `state/workflow.json` is NOT required; treat any provided requirements as authoritative
+- **Output**: Write to `state/standalone/architect/architecture.md`, `state/standalone/architect/interfaces/`, and `state/standalone/architect/module-boundaries.md`
+- **Scope**: Focus only on the user's specific design request; skip workflow phase transitions entirely
+- **Completion**: When architecture is complete, present the output and stop — do not invoke the next workflow phase

@@ -123,3 +123,13 @@ AC-T must be:
 - File conflict prevention requires strict `files.create/modify` discipline
 - Every AC-F must be traceable through AC-T to a task
 - Parallel groups enforce that no two tasks in the same group can run concurrently
+
+## Standalone Mode
+
+When invoked via `run-planner` skill (outside the full workflow):
+
+- **Input**: Accept requirements and architecture from the user directly; if `state/requirements/confirmed.json` and `state/architect/` exist, read them as primary input
+- **Context**: `state/workflow.json` is NOT required; treat any provided context as authoritative
+- **Output**: Write to `state/standalone/planner/task-board.json`
+- **Scope**: Focus only on the user's specific planning request; skip workflow phase transitions entirely
+- **Completion**: When the task board is complete, present the output and stop — do not invoke the next workflow phase

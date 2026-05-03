@@ -89,3 +89,13 @@ feat(task-001): task complete - Implement login API
 - Implementation must be minimal — don't build features, build what's needed to pass the test
 - If a round fails, the next round must carry the failure context explicitly
 - Never commit broken code
+
+## Standalone Mode
+
+When invoked via `run-developer` skill (outside the full workflow):
+
+- **Input**: Accept the task description directly from the user in natural language; a formal TaskHandoff is NOT required
+- **Context**: `state/workflow.json` is NOT required; use the user's description as the task spec; read any files the user points to
+- **File scope**: In standalone mode, file scope is determined by the user's request, not a TaskHandoff; use judgment to limit scope to what's needed
+- **Output**: Write code and tests to the locations specified by the user or inferred from the task; write dev log to `state/standalone/developer/{task-slug}/dev-log.json`
+- **Completion**: When tests pass, present the result and stop — do not update workflow state or invoke the next phase

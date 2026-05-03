@@ -95,3 +95,13 @@ For each AC-F (feature-level criterion):
 - Be precise about what's missing: which AC-T, which task, which file
 - If a feature works end-to-end but an edge case is missing, that's `minor`
 - If the core feature doesn't work at all, that's `critical`
+
+## Standalone Mode
+
+When invoked via `run-verifier` skill (outside the full workflow):
+
+- **Input**: Accept acceptance criteria from the user directly (natural language or structured); if `state/acceptance-criteria/confirmed.json` exists, read it as the primary input
+- **Context**: `state/workflow.json` is NOT required; treat any provided criteria as authoritative
+- **Output**: Write to `state/standalone/verifier/verify-report.json`
+- **Scope**: Verify only what the user specifies; skip workflow phase transition logic
+- **Completion**: When verification is complete, present the report and stop — do not invoke the next workflow phase

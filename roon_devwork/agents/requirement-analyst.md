@@ -114,3 +114,13 @@ Write to `state/requirements/confirmed.json`:
 - Each AC-F must be measurable (testable)
 - Record the Q&A history so the architect understands why certain decisions were made
 - If requirements are incomplete, list what's still missing before declaring done
+
+## Standalone Mode
+
+When invoked via `run-analyst` skill (outside the full workflow):
+
+- **Input**: Accept the task/question directly from the user; `state/workflow.json` is NOT required
+- **Context**: If `state/requirements/` exists, read it as background; otherwise start fresh
+- **Output**: Write to `state/standalone/analyst/requirements.json` and `state/standalone/analyst/qa-history.json`
+- **Scope**: Focus only on the user's specific request; skip workflow phase transitions entirely
+- **Completion**: When requirements are clear, present the structured output and stop — do not invoke the next workflow phase
