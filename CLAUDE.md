@@ -132,4 +132,22 @@ Model tiers (low/medium/high) are resolved via plugin configuration or environme
 
 ## Implementation Status
 
-This repository currently contains only `spec.md` — the full plugin implementation has not been created. All paths in this CLAUDE.md describe the **intended target architecture** from the spec.
+Plugin is implemented under `roon_devwork/`. All core files exist:
+
+| Component | Status | Path |
+|-----------|--------|------|
+| Agent definitions | ✅ Complete | `roon_devwork/agents/*.md` |
+| Workflow skills | ✅ Complete | `roon_devwork/skills/start-workflow/`, `resume-workflow/`, `approve-gate/`, `workflow-status/`, `retry-failed-tasks/` |
+| Standalone skills | ✅ Complete | `roon_devwork/skills/run-analyst/`, `run-architect/`, `run-planner/`, `run-developer/`, `run-reviewer/`, `run-verifier/` |
+| Hooks | ✅ Complete | `roon_devwork/hooks/` |
+| MCP server config | ✅ Complete | `roon_devwork/mcp/workflow-server.json` |
+| CLI tool | ✅ Complete | `roon_devwork/bin/workflow-cli` |
+| JSON schemas | ✅ Complete | `roon_devwork/schemas/` |
+| Templates | ✅ Complete | `roon_devwork/templates/` |
+| Plugin manifest | ✅ Complete | `roon_devwork/.claude-plugin/plugin.json` |
+
+### Key Design Decisions Made
+
+- Plugin renamed from `claude-dev-workflow` → `roon_devwork`
+- Each agent can be invoked standalone via `run-*` skills (output to `state/standalone/`), without requiring a full workflow
+- Standalone output is isolated from workflow state to avoid corruption
