@@ -56,7 +56,18 @@ This creates `state/workflow.json` with:
 - `phases.REQUIREMENTS.status`: in_progress
 - All other phases: pending
 
-### Step 4: Git Initialize
+### Step 4: Update .gitignore
+
+Append the following to `.gitignore` (create if it doesn't exist), to prevent workflow state from being committed:
+
+```
+# workflow state — contains requirements, architecture, task details
+state/
+```
+
+Do this before any git operations so the state directory is never accidentally staged.
+
+### Step 5: Git Initialize
 
 If not already a git repository:
 ```bash

@@ -53,6 +53,8 @@ state/
 
 State is the **source of truth** for resuming interrupted workflows. The lead agent rebuilds context from `state/` on resume.
 
+**Security**: `state/` contains sensitive project information (requirements, architecture, task details). `start-workflow` automatically adds `state/` to `.gitignore` to prevent it from being committed.
+
 ## Agent Roles
 
 | Role | Single Responsibility | Input → Output |
